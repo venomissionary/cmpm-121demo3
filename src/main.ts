@@ -19,7 +19,7 @@ Simplebutton.addEventListener('click', () => {
     setTimeout(() => {
         Simplebutton.style.transform = "scale(1.0)";
 
-    }, 150);
+    }, 155);
 });
 
 document.body.appendChild(Canvascontainer);
