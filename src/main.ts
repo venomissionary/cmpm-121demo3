@@ -1,9 +1,24 @@
 import * as L from "leaflet";
 import "./leafletWorkaround.ts";
 
-let Usercoins = 0;
-const Userposition = { latitude: 36.9895, longitude: -122.063 };
-const Storage: Record<string, string> = {};
+let Usercoins: number = parseInt(
+  globalThis.localStorage.getItem("Usercoin") || "0",
+  10,
+);
+
+let Pastmovement: L.LatLng[] = JSON.parse(
+  globalThis.localStorage.getItem("Pastmovements") || "[]",
+);
+
+let Movementpath: L.Polyline;
+let Userposition = JSON.parse(
+  globalThis.localStorage.getItem("Userpositions") ||
+    JSON.stringify({ latitude: 36.9895, longitude: -122.063 }),
+);
+
+let Storage: Record<string, string> = JSON.parse(
+  globalThis.localStorage.getItem("Cachedata") || "{}",
+);
 
 // Page container
 const Canvascontainer = document.createElement("div");
@@ -13,18 +28,45 @@ Canvascontainer.style.padding = "200px";
 // Coin counter display
 const CoinCounter = document.createElement("div");
 CoinCounter.style.position = "absolute";
-CoinCounter.style.top = "10px";
-CoinCounter.style.right = "80px";
+CoinCounter.style.top = "150px";
+CoinCounter.style.right = "30px";
 CoinCounter.style.padding = "10px 20px";
-CoinCounter.style.color = "#ffffff";
-CoinCounter.style.fontSize = "28px";
+CoinCounter.style.color = "#FFFF00";
+CoinCounter.style.fontSize = "42px";
 CoinCounter.style.boxShadow = "0px 4px 10px rgba(0, 0, 0, 0.5)";
 CoinCounter.textContent = `Coins collected: ${Usercoins}`;
 document.body.appendChild(CoinCounter);
 
+const MainTitle = document.createElement("h1");
+MainTitle.style.position = "absolute";
+MainTitle.style.top = "20px";
+MainTitle.style.right = "5px";
+MainTitle.style.padding = "10px 20px";
+MainTitle.style.color = "#FFFFFF";
+MainTitle.style.fontSize = "50px";
+MainTitle.style.boxShadow = "0px 4px 10px rgba(0, 0, 0, 0.5)";
+MainTitle.textContent = `Geocoin Carrier `;
+
+document.body.appendChild(MainTitle);
+
 // Update the coin counter display
 function Updatecounter() {
   CoinCounter.textContent = `Coins collected: ${Usercoins}`;
+  globalThis.localStorage.setItem("Usercoin", Usercoins.toString());
+}
+
+function Saveuserpostition() {
+  globalThis.localStorage.setItem(
+    "Userpositions",
+    JSON.stringify(Userposition),
+  );
+}
+
+function Savemovementpath() {
+  globalThis.localStorage.setItem(
+    "Pastmovements",
+    JSON.stringify(Pastmovement),
+  );
 }
 
 // Load the map
@@ -41,10 +83,12 @@ document.addEventListener("DOMContentLoaded", () => {
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 
-  //User movement controls
+  Movementpath = L.polyline(Pastmovement, { color: "red" }).addTo(map);
+
+  // User movement controls
   const Movementbutton = document.createElement("div");
   Movementbutton.style.position = "absolute";
-  Movementbutton.style.top = "80px";
+  Movementbutton.style.top = "340px";
   Movementbutton.style.right = "30px";
   Movementbutton.style.padding = "10px 20px";
   Movementbutton.style.color = "#ffffff";
@@ -66,18 +110,95 @@ document.addEventListener("DOMContentLoaded", () => {
       if (label === "Right") Userposition.longitude += 0.0001;
 
       map.setView([Userposition.latitude, Userposition.longitude], 18);
+
+      Pastmovement.push([Userposition.latitude, Userposition.longitude]);
+      Movementpath.setLatLngs(Pastmovement);
+
+      Saveuserpostition();
+      Savemovementpath();
     };
 
     Movementbutton.appendChild(button);
   });
-  const Initallocations = Loadgeneration(
+
+  //extra user controls
+  const Controlbutton = document.createElement("div");
+  Controlbutton.style.position = "absolute";
+  Controlbutton.style.top = "250px";
+  Controlbutton.style.right = "60px";
+  Controlbutton.style.padding = "10px 20px";
+  Controlbutton.style.color = "#ffffff";
+  Controlbutton.style.fontSize = "28px";
+  Controlbutton.style.boxShadow = "0px 4px 10px rgba(0, 0, 0, 0.5)";
+  document.body.appendChild(Controlbutton);
+
+  // Relocate to custom geolocation
+  const Locationbutton = document.createElement("button");
+  Locationbutton.textContent = "Custom geolocation";
+  Locationbutton.style.margin = "5px";
+  Locationbutton.onclick = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        Userposition.latitude = position.coords.latitude;
+        Userposition.longitude = position.coords.longitude;
+
+        map.setView([Userposition.latitude, Userposition.longitude], 18);
+        Pastmovement = [];
+        Movementpath.setLatLngs([]);
+        const Newallocations = Loadgeneration(
+          Userposition.latitude,
+          Userposition.longitude,
+        );
+        Marker(map, Newallocations);
+
+        Saveuserpostition();
+        Savemovementpath();
+      });
+    } else {
+      alert("Your browser is not supported :( ");
+    }
+  };
+  Controlbutton.appendChild(Locationbutton);
+
+  // Reset map layout
+  const Resetbutton = document.createElement("button");
+  Resetbutton.textContent = "Reset map";
+  Resetbutton.style.margin = "5px";
+  Resetbutton.onclick = () => {
+    const Fullreset = confirm(
+      "Do you want to reset the map? This will erase all progress. :|",
+    );
+    if (Fullreset) {
+      globalThis.localStorage.clear();
+      Usercoins = 0;
+      Pastmovement = [];
+      Storage = {};
+      Movementpath.setLatLngs([]);
+      Userposition = { latitude: 36.9895, longitude: -122.063 };
+
+      map.setView([Userposition.latitude, Userposition.longitude], 18);
+      const Originalocation = Loadgeneration(
+        Userposition.latitude,
+        Userposition.longitude,
+      );
+      Marker(map, Originalocation);
+      Updatecounter();
+    }
+  };
+  Controlbutton.appendChild(Resetbutton);
+
+  const Currentlocation = Loadgeneration(
     Userposition.latitude,
     Userposition.longitude,
   );
-  Marker(map, Initallocations);
+  Marker(map, Currentlocation);
+
+  globalThis.addEventListener("beforeunload", () => {
+    globalThis.localStorage.setItem("Cachedata", JSON.stringify(Storage));
+  });
 });
 
-//creates a grid within the map
+// Creates a grid within the map
 function Gridsystem(
   latitude: number,
   longitude: number,
@@ -88,7 +209,7 @@ function Gridsystem(
   };
 }
 
-//stores in cache data
+// Stores in cache data
 class Mapcache {
   constructor(
     public latitude: number,
@@ -154,16 +275,16 @@ function Marker(map: L.Map, locations: Mapcache[]) {
     const Memo = () => {
       const Information = document.createElement("div");
       const info = document.createElement("p");
-      info.innerHTML = `<b>GiftBox</b><br>Coins: ${location.coin}`;
+      info.innerHTML = `<b>COIN GIFTBOX</b><br>Coins: ${location.coin}`;
 
       const Coinserial = location.serials.map((serial) => `<li>${serial}</li>`);
-      info.innerHTML = `<b>GiftBox</b><br>Coins: ${location.coin}<br><ul>${
+      info.innerHTML = `<b>COIN GIFTBOX</b><br>Coins: ${location.coin}<br><ul>${
         Coinserial.join("")
       }</ul>`;
 
       Information.appendChild(info);
 
-      //coin collect and placement including serial assignment
+      // Coin collect and placement including serial assignment
       const Collectonecoin = document.createElement("button");
       Collectonecoin.textContent = "Collect 1";
       Collectonecoin.onclick = () => {
@@ -182,18 +303,18 @@ function Marker(map: L.Map, locations: Mapcache[]) {
       };
       Information.appendChild(Collectonecoin);
 
-      const placeonecoin = document.createElement("button");
-      placeonecoin.textContent = "Place 1";
-      placeonecoin.disabled = Usercoins === 0;
-      placeonecoin.onclick = () => {
+      const Placeonecoin = document.createElement("button");
+      Placeonecoin.textContent = "Place 1";
+      Placeonecoin.disabled = Usercoins === 0;
+      Placeonecoin.onclick = () => {
         if (Usercoins > 0) {
           location.coin += 1;
           const { i: cordI, j: cordJ } = Gridsystem(
             location.latitude,
             location.longitude,
           );
-          const ThisSerial = `${cordI}:${cordJ}#${location.coin - 1}`;
-          location.serials.push(ThisSerial);
+          const Newserial = `${cordI}:${cordJ}#${location.coin - 1}`;
+          location.serials.push(Newserial);
           Usercoins -= 1;
           Storage[
             `${Gridsystem(location.latitude, location.longitude).i}:${
@@ -204,7 +325,7 @@ function Marker(map: L.Map, locations: Mapcache[]) {
           Memo();
         }
       };
-      Information.appendChild(placeonecoin);
+      Information.appendChild(Placeonecoin);
 
       const Collectallcoins = document.createElement("button");
       Collectallcoins.textContent = "Take all";
@@ -234,11 +355,11 @@ function Marker(map: L.Map, locations: Mapcache[]) {
             location.latitude,
             location.longitude,
           );
-          const ThisSerial = Array.from(
+          const Newserial = Array.from(
             { length: Usercoins },
             (_, serial) => `${cordI}:${cordJ}#${location.coin + serial}`,
           );
-          location.serials.push(...ThisSerial);
+          location.serials.push(...Newserial);
           location.coin += Usercoins;
           Usercoins = 0;
           Storage[
